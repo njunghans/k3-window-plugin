@@ -8,7 +8,6 @@
  */
 
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ProfileConfig } from "./types";
 
 // ============================================================================
@@ -311,96 +310,74 @@ export function generateMullionPaths(
   return paths;
 }
 
+// Sash clearance: total gap between sash and outer frame opening (split evenly on all sides)
+export const SASH_CLEARANCE = 0.003; // 3mm total
+
 // ============================================================================
 // Extrusion & Assembly
 // ============================================================================
 
 /**
  * Create outer frame by extruding L-shaped profile along 4 segments
- * Extrudes L-shaped cross-section along top, bottom, left, right edges
+ * Returns array of 4 geometries in standard orientation (extruded along Z)
+ * Positioning/rotation should be handled at the mesh/group level
  */
 export function createFrameFromProfile(
   outerWidth: number,
   outerHeight: number,
   profileWidth: number,
   profileDepth: number,
-): THREE.BufferGeometry {
+): THREE.BufferGeometry[] {
   const mm = 0.001;
   const w = outerWidth * mm;
   const h = outerHeight * mm;
+  const pw = profileWidth * mm; // profile width in meters
 
   // Create L-shaped profile cross-section
   const lProfile = createLShapeProfileCrossSection(profileWidth, profileDepth);
 
   const geometries: THREE.BufferGeometry[] = [];
 
-  // Profile coordinate system:
-  // X = profile width (across the frame)
-  // Y = profile depth (front to back)
-  // Extrusion will be along Z-axis initially, then rotated
+  // CORNER JOINT STRATEGY:
+  // - Vertical segments (left/right) extend FULL HEIGHT
+  // - Horizontal segments (top/bottom) FIT BETWEEN verticals: width - 2*profileWidth
+  // All segments extruded along +Z axis; positioning/rotation in Window.tsx
 
-  // BOTTOM SEGMENT: Extrude along X-axis (width)
-  // Final: extrusion along X, profile width along +Z, profile depth along +Y
+  // BOTTOM SEGMENT: length = width - 2*profileWidth (fits between verticals)
   const bottomGeo = new THREE.ExtrudeGeometry(lProfile, {
-    depth: w,
+    depth: w - 2 * pw,
     bevelEnabled: false,
   });
-  // After extrusion: profile in XY plane, extruded along Z
-  // Rotate so extrusion goes along X: rotate around Y by -90°
-  bottomGeo.rotateY(-Math.PI / 2);
-  // Now: extrusion along X, profile X along -Z, profile Y along Y
-  // Rotate around X to fix profile orientation
-  bottomGeo.rotateX(Math.PI / 2);
-  // Now: extrusion along X, profile width along Y, profile depth along Z
-  // Need profile depth along Y, width along Z, so rotate around X again
-  bottomGeo.rotateX(-Math.PI / 2);
-  bottomGeo.rotateZ(-Math.PI / 2);
-  // Position at bottom
-  bottomGeo.translate(-w / 2, -h / 2, 0);
   geometries.push(bottomGeo);
 
-  // TOP SEGMENT: Similar to bottom but flipped and at top
+  // TOP SEGMENT: length = width - 2*profileWidth (fits between verticals)
   const topGeo = new THREE.ExtrudeGeometry(lProfile, {
-    depth: w,
+    depth: w - 2 * pw,
     bevelEnabled: false,
   });
-  topGeo.rotateY(-Math.PI / 2);
-  topGeo.rotateZ(Math.PI / 2);
-  topGeo.translate(-w / 2, h / 2, 0);
   geometries.push(topGeo);
 
-  // LEFT SEGMENT: Extrude along Y-axis (height)
+  // LEFT SEGMENT: length = full height
   const leftGeo = new THREE.ExtrudeGeometry(lProfile, {
     depth: h,
     bevelEnabled: false,
   });
-  leftGeo.rotateZ(Math.PI);
-  leftGeo.rotateX(Math.PI / 2);
-  leftGeo.translate(-w / 2, -h / 2, 0);
   geometries.push(leftGeo);
 
-  // RIGHT SEGMENT: Similar to left but mirrored and at right
+  // RIGHT SEGMENT: length = full height
   const rightGeo = new THREE.ExtrudeGeometry(lProfile, {
     depth: h,
     bevelEnabled: false,
   });
-  rightGeo.rotateX(Math.PI / 2);
-  rightGeo.translate(w / 2, -h / 2, 0);
   geometries.push(rightGeo);
 
-  // Merge all 4 segments into single geometry
-  const mergedGeo = mergeGeometries(geometries);
-  if (!mergedGeo) {
-    console.warn("Failed to merge frame geometries, using first segment");
-    return geometries[0];
-  }
-
-  return mergedGeo;
+  return geometries;
 }
 
 /**
  * Create individual sash frame by extruding stepped profile along 4 segments
- * Extrudes stepped cross-section along top, bottom, left, right edges
+ * Returns array of 4 geometries in standard orientation (extruded along Z)
+ * Positioning/rotation should be handled at the mesh/group level
  *
  * REFACTORED: Now accepts ProfileConfig for realistic profile generation
  */
@@ -408,7 +385,7 @@ export function createSashFrame(
   outerWidth: number,
   outerHeight: number,
   profileConfig: ProfileConfig,
-): THREE.BufferGeometry {
+): THREE.BufferGeometry[] {
   const mm = 0.001;
   const w = outerWidth * mm;
   const h = outerHeight * mm;
@@ -417,9 +394,12 @@ export function createSashFrame(
   const outerFrameWidth = profileConfig.width || 60;
   const depth = profileConfig.depth || 70;
 
+  // Sash profile width (70% of outer frame profile)
+  const sashProfileWidth = outerFrameWidth * mm * 0.7;
+
   // Create clearance so sash fits inside opening
   // Real windows have 2-3mm clearance on each side for operation
-  const clearance = 0.003; // 3mm total clearance
+  const clearance = SASH_CLEARANCE; // 3mm total clearance
   const actualWidth = w - clearance;
   const actualHeight = h - clearance;
 
@@ -431,53 +411,40 @@ export function createSashFrame(
 
   const geometries: THREE.BufferGeometry[] = [];
 
-  // BOTTOM SEGMENT: Extrude stepped profile along width
+  // CORNER JOINT STRATEGY (same as outer frame):
+  // - Vertical stiles (left/right) extend FULL HEIGHT
+  // - Horizontal rails (top/bottom) FIT BETWEEN stiles: width - 2*sashProfileWidth
+  // All segments extruded along +Z axis; positioning/rotation in Window.tsx
+
+  // BOTTOM SEGMENT: length = actualWidth - 2*sashProfileWidth (fits between stiles)
   const bottomGeo = new THREE.ExtrudeGeometry(steppedProfile, {
-    depth: actualWidth,
+    depth: actualWidth - 2 * sashProfileWidth,
     bevelEnabled: false,
   });
-  bottomGeo.rotateY(-Math.PI / 2);
-  bottomGeo.rotateZ(-Math.PI / 2);
-  bottomGeo.translate(-actualWidth / 2, -actualHeight / 2, 0);
   geometries.push(bottomGeo);
 
-  // TOP SEGMENT: Extrude stepped profile along width (flipped)
+  // TOP SEGMENT: length = actualWidth - 2*sashProfileWidth (fits between stiles)
   const topGeo = new THREE.ExtrudeGeometry(steppedProfile, {
-    depth: actualWidth,
+    depth: actualWidth - 2 * sashProfileWidth,
     bevelEnabled: false,
   });
-  topGeo.rotateY(-Math.PI / 2);
-  topGeo.rotateZ(Math.PI / 2);
-  topGeo.translate(-actualWidth / 2, actualHeight / 2, 0);
   geometries.push(topGeo);
 
-  // LEFT SEGMENT: Extrude stepped profile along height
+  // LEFT SEGMENT: length = actualHeight (full height)
   const leftGeo = new THREE.ExtrudeGeometry(steppedProfile, {
     depth: actualHeight,
     bevelEnabled: false,
   });
-  leftGeo.rotateZ(Math.PI);
-  leftGeo.rotateX(Math.PI / 2);
-  leftGeo.translate(-actualWidth / 2, -actualHeight / 2, 0);
   geometries.push(leftGeo);
 
-  // RIGHT SEGMENT: Extrude stepped profile along height (flipped)
+  // RIGHT SEGMENT: length = actualHeight (full height)
   const rightGeo = new THREE.ExtrudeGeometry(steppedProfile, {
     depth: actualHeight,
     bevelEnabled: false,
   });
-  rightGeo.rotateX(Math.PI / 2);
-  rightGeo.translate(actualWidth / 2, -actualHeight / 2, 0);
   geometries.push(rightGeo);
 
-  // Merge all 4 segments into single geometry
-  const mergedGeo = mergeGeometries(geometries);
-  if (!mergedGeo) {
-    console.warn("Failed to merge sash geometries, using first segment");
-    return geometries[0];
-  }
-
-  return mergedGeo;
+  return geometries;
 }
 
 /**
@@ -530,16 +497,17 @@ export function createPfosten(
 
 /**
  * Create complete frame geometry for a window
- * Returns array of geometries for outer frame and sash frames
+ * Returns structure with outer frame segments and sash frame segments
  */
 export function createCompleteFrame(
   widthMm: number,
   heightMm: number,
   paneCount: number,
   profileConfig: ProfileConfig,
-): THREE.BufferGeometry[] {
-  const geometries: THREE.BufferGeometry[] = [];
-
+): {
+  outerFrameSegments: THREE.BufferGeometry[];
+  sashFrameSegments: THREE.BufferGeometry[][];
+} {
   const outerProfileWidth = profileConfig.width || 60;
   const outerProfileDepth = profileConfig.depth || 70;
 
@@ -552,52 +520,90 @@ export function createCompleteFrame(
   const innerWidth = w - fw * 2;
   const innerHeight = h - fw * 2;
 
-  // Create outer frame as single piece
-  const outerFrame = createFrameFromProfile(
+  // Create outer frame as 4 separate segments
+  const outerFrameSegments = createFrameFromProfile(
     widthMm,
     heightMm,
     outerProfileWidth,
     outerProfileDepth,
   );
-  geometries.push(outerFrame);
 
   // Create individual sash frames for each glass section
-  // Return them centered at origin - positioning handled in Window.tsx for rotation
+  const sashFrameSegments: THREE.BufferGeometry[][] = [];
+
   if (paneCount === 1) {
     // Single sash covering entire inner area
-    const sash = createSashFrame(
+    const sashSegments = createSashFrame(
       innerWidth / mm,
       innerHeight / mm,
-      profileConfig, // Pass full config for realistic profile
+      profileConfig,
     );
-    // Position sash to create realistic seal with outer frame
-    // Sash depth is 90% of frame, offset to align front faces
-    // This creates appearance of sash fitting into frame rebate
-    sash.translate(0, 0, outerProfileDepth * mm * 0.6);
-    geometries.push(sash);
+    sashFrameSegments.push(sashSegments);
   } else {
     // Multiple sashes side by side
     const sashWidth = innerWidth / paneCount;
 
     for (let i = 0; i < paneCount; i++) {
-      const sash = createSashFrame(
+      const sashSegments = createSashFrame(
         sashWidth / mm,
         innerHeight / mm,
-        profileConfig, // Pass full config for realistic profile
+        profileConfig,
       );
-
-      // Position sash to align front faces with outer frame
-      sash.translate(0, 0, outerProfileDepth * mm * 0.6);
-      geometries.push(sash);
+      sashFrameSegments.push(sashSegments);
     }
   }
 
-  return geometries;
+  return { outerFrameSegments, sashFrameSegments };
 }
 
 // ============================================================================
 // Glass Pane Generation
 // ============================================================================
+
+/**
+ * Calculate the Z-position for glass surface
+ * This ensures consistent positioning for glass, visualization lines, and buttons
+ * 
+ * @param profileConfig - Profile configuration containing depth
+ * @param glassThicknessMm - Glass thickness in mm (default 24mm for double glazing)
+ * @returns Z-position in meters for the glass center
+ */
+export function calculateGlassZPosition(
+  profileConfig: ProfileConfig,
+  glassThicknessMm: number = 24,
+): number {
+  const mm = 0.001;
+  const frameDepth = (profileConfig.depth || 70) * mm;
+  const thickness = glassThicknessMm * mm;
+  
+  // Position glass inside the sash frame depth
+  // Sash sits at -15% of frame depth, glass sits in the middle of sash depth
+  const sashZOffset = -frameDepth * 0.15;
+  const sashDepth = frameDepth * 0.6;
+  const glassZ = sashZOffset - sashDepth * 0.5 + thickness / 2;
+  
+  return glassZ;
+}
+
+/**
+ * Calculate the Z-position for the front face of the glass
+ * This is where visualization lines and buttons should be positioned
+ * 
+ * @param profileConfig - Profile configuration containing depth
+ * @param glassThicknessMm - Glass thickness in mm (default 24mm for double glazing)
+ * @returns Z-position in meters for the glass front surface
+ */
+export function calculateGlassFrontZPosition(
+  profileConfig: ProfileConfig,
+  glassThicknessMm: number = 24,
+): number {
+  const mm = 0.001;
+  const thickness = glassThicknessMm * mm;
+  const glassZ = calculateGlassZPosition(profileConfig, glassThicknessMm);
+  
+  // Front surface is at glass center + half thickness
+  return glassZ + thickness / 2;
+}
 
 /**
  * Create glass panes with proper thickness and positioning
@@ -615,7 +621,6 @@ export function createGlassPanes(
   const h = heightMm * mm;
   const outerFw = (profileConfig.width || 60) * mm;
   const thickness = glassThicknessMm * mm;
-  const frameDepth = (profileConfig.depth || 70) * mm;
 
   // Sash profile width
   const sashFw = outerFw * 0.7;
@@ -624,8 +629,8 @@ export function createGlassPanes(
   const innerWidth = w - outerFw * 2;
   const innerHeight = h - outerFw * 2;
 
-  // Position glass in front of sash frames
-  const glassZ = frameDepth + frameDepth * 0.1 + thickness / 2;
+  // Use shared glass Z-position calculation
+  const glassZ = calculateGlassZPosition(profileConfig, glassThicknessMm);
 
   const geometries: THREE.BufferGeometry[] = [];
 

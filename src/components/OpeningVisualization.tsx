@@ -5,18 +5,20 @@ import type { OpeningType } from "../types";
 interface OpeningVisualizationProps {
   /** Opening type */
   openingType: OpeningType;
-  /** Width of this specific sash (in meters) */
-  width: number;
-  /** Height of this specific sash (in meters) */
-  height: number;
-  /** Depth (in meters) */
-  depth: number;
+  /** Width of the glass pane (in meters) */
+  glassWidth: number;
+  /** Height of the glass pane (in meters) */
+  glassHeight: number;
   /** Position of this sash in 3D space [x, y, z] */
   sashPosition: [number, number, number];
+  /** Z-position of glass front surface (in meters) */
+  glassFrontZ: number;
   /** Current open state */
   isOpen: boolean;
   /** Callback when opening state changes */
   onOpenChange: (isOpen: boolean) => void;
+  /** Margin from glass edges (in meters) */
+  margin?: number;
   /** Only render 3D lines (for sash group) */
   renderLinesOnly?: boolean;
   /** Only render HTML button (for separate overlay) */
@@ -38,24 +40,32 @@ interface OpeningVisualizationProps {
  */
 export function OpeningVisualization({
   openingType,
-  width,
-  height,
-  depth,
+  glassWidth,
+  glassHeight,
   sashPosition,
+  glassFrontZ,
   isOpen,
   onOpenChange,
+  margin = 0.005, // Default 5mm margin from glass edges
   renderLinesOnly = false,
   renderButtonOnly = false,
 }: OpeningVisualizationProps) {
-  const w = width;
-  const h = height;
-  const d = depth;
-  const fw = 0.012; // Approximate sash frame width in meters
+  // Glass dimensions with margin applied
+  const w = glassWidth;
+  const h = glassHeight;
+  const m = margin;
 
-  // Calculate correct Z position for lines and buttons:
-  // - Sash ExtrudeGeometry + translate puts front face at: 3*d/2
-  // - Additional sash offset adds: d * 0.1
-  const lineZ = (3 * d) / 2 + d * 0.1;
+  // Use the passed glass front Z-position for lines and buttons
+  const lineZ = glassFrontZ;
+
+  // Calculate glass corners with margin
+  const topLeft = { x: -w / 2 + m, y: h / 2 - m };
+  const topRight = { x: w / 2 - m, y: h / 2 - m };
+  const bottomLeft = { x: -w / 2 + m, y: -h / 2 + m };
+  const bottomRight = { x: w / 2 - m, y: -h / 2 + m };
+  const midTop = { x: 0, y: h / 2 - m };
+  const midLeft = { x: -w / 2 + m, y: 0 };
+  const midRight = { x: w / 2 - m, y: 0 };
 
   if (openingType === "fixed") {
     // Fixed windows show just a cross/plus symbol
@@ -98,115 +108,113 @@ export function OpeningVisualization({
 
   switch (openingType) {
     case "kipp": {
-      // Kipp: Button at top center, lines pointing down (hinges at bottom)
-      buttonX = 0;
-      buttonY = h / 2 - fw;
+      // Kipp: Button at top center
+      // Lines: bottomLeft → midTop → bottomRight
+      buttonX = midTop.x;
+      buttonY = midTop.y;
 
-      // Two diagonal lines pointing down from button
       lines = [
         {
-          start: new THREE.Vector3(0, buttonY, lineZ),
-          end: new THREE.Vector3(-w / 3, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(bottomLeft.x, bottomLeft.y, lineZ),
+          end: new THREE.Vector3(midTop.x, midTop.y, lineZ),
         },
         {
-          start: new THREE.Vector3(0, buttonY, lineZ),
-          end: new THREE.Vector3(w / 3, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(midTop.x, midTop.y, lineZ),
+          end: new THREE.Vector3(bottomRight.x, bottomRight.y, lineZ),
         },
       ];
       break;
     }
 
     case "dreh-links": {
-      // Dreh Links: Button at RIGHT edge, two diagonal lines (left hinge, swings right)
-      buttonX = w / 2 - fw;
-      buttonY = h / 4;
+      // Dreh Links (left hinge, swings right): Button at free edge (mid-right)
+      // Lines: midRight → topLeft, midRight → bottomLeft (toward hinge)
+      buttonX = midRight.x;
+      buttonY = midRight.y;
 
-      // Two diagonal lines showing swing range to opposite corners
       lines = [
         {
-          start: new THREE.Vector3(buttonX, buttonY, lineZ),
-          end: new THREE.Vector3(-w / 2 + fw * 2, h / 2 - fw * 2, lineZ),
+          start: new THREE.Vector3(midRight.x, midRight.y, lineZ),
+          end: new THREE.Vector3(topLeft.x, topLeft.y, lineZ),
         },
         {
-          start: new THREE.Vector3(buttonX, buttonY, lineZ),
-          end: new THREE.Vector3(-w / 2 + fw * 2, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(midRight.x, midRight.y, lineZ),
+          end: new THREE.Vector3(bottomLeft.x, bottomLeft.y, lineZ),
         },
       ];
       break;
     }
 
     case "dreh-rechts": {
-      // Dreh Rechts: Button at LEFT edge, two diagonal lines (right hinge, swings left)
-      buttonX = -w / 2 + fw;
-      buttonY = h / 4;
+      // Dreh Rechts (right hinge, swings left): Button at free edge (mid-left)
+      // Lines: midLeft → topRight, midLeft → bottomRight (toward hinge)
+      buttonX = midLeft.x;
+      buttonY = midLeft.y;
 
-      // Two diagonal lines showing swing range to opposite corners
       lines = [
         {
-          start: new THREE.Vector3(buttonX, buttonY, lineZ),
-          end: new THREE.Vector3(w / 2 - fw * 2, h / 2 - fw * 2, lineZ),
+          start: new THREE.Vector3(midLeft.x, midLeft.y, lineZ),
+          end: new THREE.Vector3(topRight.x, topRight.y, lineZ),
         },
         {
-          start: new THREE.Vector3(buttonX, buttonY, lineZ),
-          end: new THREE.Vector3(w / 2 - fw * 2, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(midLeft.x, midLeft.y, lineZ),
+          end: new THREE.Vector3(bottomRight.x, bottomRight.y, lineZ),
         },
       ];
       break;
     }
 
     case "dreh-kipp-links": {
-      // Dreh-/Kipp Links: Button at RIGHT edge, FOUR lines total (left hinge, tilt-turn)
-      buttonX = w / 2 - fw;
-      buttonY = h / 4;
+      // Dreh-/Kipp Links: Button at free edge (mid-right), FOUR lines total
+      buttonX = midRight.x;
+      buttonY = midRight.y;
 
-      // Four lines: 2 for dreh (swing) + 2 for kipp (tilt) - matching kipp pattern from top
       lines = [
-        // Dreh lines: diagonal to opposite corners (showing swing range)
+        // Dreh lines: midRight → topLeft, midRight → bottomLeft (toward hinge)
         {
-          start: new THREE.Vector3(buttonX, buttonY, lineZ),
-          end: new THREE.Vector3(-w / 2 + fw * 2, h / 2 - fw * 2, lineZ),
+          start: new THREE.Vector3(midRight.x, midRight.y, lineZ),
+          end: new THREE.Vector3(topLeft.x, topLeft.y, lineZ),
         },
         {
-          start: new THREE.Vector3(buttonX, buttonY, lineZ),
-          end: new THREE.Vector3(-w / 2 + fw * 2, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(midRight.x, midRight.y, lineZ),
+          end: new THREE.Vector3(bottomLeft.x, bottomLeft.y, lineZ),
         },
-        // Kipp lines: from TOP center pointing down (same as pure kipp)
+        // Kipp lines: bottomLeft → midTop → bottomRight
         {
-          start: new THREE.Vector3(0, h / 2 - fw, lineZ),
-          end: new THREE.Vector3(-w / 3, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(bottomLeft.x, bottomLeft.y, lineZ),
+          end: new THREE.Vector3(midTop.x, midTop.y, lineZ),
         },
         {
-          start: new THREE.Vector3(0, h / 2 - fw, lineZ),
-          end: new THREE.Vector3(w / 3, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(midTop.x, midTop.y, lineZ),
+          end: new THREE.Vector3(bottomRight.x, bottomRight.y, lineZ),
         },
       ];
       break;
     }
 
     case "dreh-kipp-rechts": {
-      // Dreh-/Kipp Rechts: Button at LEFT edge, FOUR lines total (right hinge, tilt-turn)
-      buttonX = -w / 2 + fw;
-      buttonY = h / 4;
+      // Dreh-/Kipp Rechts: Button at free edge (mid-left), FOUR lines total
+      buttonX = midLeft.x;
+      buttonY = midLeft.y;
 
-      // Four lines: 2 for dreh (swing) + 2 for kipp (tilt) - matching kipp pattern from top
       lines = [
-        // Dreh lines: diagonal to opposite corners (showing swing range)
+        // Dreh lines: midLeft → topRight, midLeft → bottomRight (toward hinge)
         {
-          start: new THREE.Vector3(buttonX, buttonY, lineZ),
-          end: new THREE.Vector3(w / 2 - fw * 2, h / 2 - fw * 2, lineZ),
+          start: new THREE.Vector3(midLeft.x, midLeft.y, lineZ),
+          end: new THREE.Vector3(topRight.x, topRight.y, lineZ),
         },
         {
-          start: new THREE.Vector3(buttonX, buttonY, lineZ),
-          end: new THREE.Vector3(w / 2 - fw * 2, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(midLeft.x, midLeft.y, lineZ),
+          end: new THREE.Vector3(bottomRight.x, bottomRight.y, lineZ),
         },
-        // Kipp lines: from TOP center pointing down (same as pure kipp)
+        // Kipp lines: bottomLeft → midTop → bottomRight
         {
-          start: new THREE.Vector3(0, h / 2 - fw, lineZ),
-          end: new THREE.Vector3(-w / 3, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(bottomLeft.x, bottomLeft.y, lineZ),
+          end: new THREE.Vector3(midTop.x, midTop.y, lineZ),
         },
         {
-          start: new THREE.Vector3(0, h / 2 - fw, lineZ),
-          end: new THREE.Vector3(w / 3, -h / 2 + fw * 2, lineZ),
+          start: new THREE.Vector3(midTop.x, midTop.y, lineZ),
+          end: new THREE.Vector3(bottomRight.x, bottomRight.y, lineZ),
         },
       ];
       break;
@@ -330,7 +338,7 @@ export function OpeningVisualization({
 
       {/* 2D HTML Clickable Button */}
       <Html
-        position={[buttonX, buttonY, d / 2]}
+        position={[buttonX, buttonY, lineZ]}
         center
         style={{
           pointerEvents: "auto",

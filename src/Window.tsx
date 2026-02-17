@@ -8,10 +8,173 @@ import {
   createCompleteFrame,
   createGlassPanes,
   createPfosten,
+  SASH_CLEARANCE,
+  calculateGlassFrontZPosition,
 } from "./profileSystem";
 import { createGlassMaterial } from "./components/WindowGlass";
 import { OpeningVisualization } from "./components/OpeningVisualization";
 import type { OpeningConfig } from "./types";
+
+/**
+ * Calculate transform for a frame segment
+ * Returns group position, mesh rotation, and mesh local position
+ *
+ * GEOMETRY NOTES:
+ * - ExtrudeGeometry extrudes 2D cross-section (XY plane) along +Z axis from 0 to length
+ * - Geometry is NOT centered - starts at origin (0,0,0) and extends to (0,0,length)
+ * - We use nested groups: outer group sets world position, inner mesh handles rotation
+ *
+ * CORNER JOINT STRATEGY:
+ * - Vertical segments (left/right jambs) extend FULL HEIGHT from bottom to top
+ * - Horizontal segments (top/bottom) FIT BETWEEN verticals, shortened by 2*profileWidth
+ * - This creates clean butt joints at corners
+ *
+ * ROTATION EXPLANATION:
+ * - Bottom/Top: Rotate -90° around Y to align extrusion horizontally, then 180° around Z to flip orientation
+ * - Left/Right: Rotate 90° around X to align extrusion vertically, then 180° around Z to face inward
+ */
+function getFrameSegmentTransform(
+  segment: "bottom" | "top" | "left" | "right",
+  width: number,
+  height: number,
+  depth: number,
+  profileWidth: number,
+) {
+  const w = width;
+  const h = height;
+  const d = depth;
+  const pw = profileWidth;
+
+  switch (segment) {
+    case "bottom":
+      // Horizontal bar at bottom, fits between left and right verticals
+      // Geometry pre-shortened to (width - 2*profileWidth) in profileSystem.ts
+      // Profile extends DOWNWARD after rotation → shift group UP by depth to compensate
+      return {
+        groupPosition: [-w -2*pw, -h / 2, -d] as [number, number, number],
+        meshRotation: [-Math.PI / 2, Math.PI / 2, Math.PI] as [
+          number,
+          number,
+          number,
+        ],
+        meshPosition: [w - 2 * pw, 0, d / 2] as [number, number, number],
+      };
+    case "top":
+      // Horizontal bar at top, fits between left and right verticals
+      // Profile extends DOWNWARD after rotation → correct for top (faces inward)
+      return {
+        groupPosition: [-w / 2 + pw, h / 2, -d] as [number, number, number],
+        meshRotation: [-Math.PI / 2, -Math.PI / 2, Math.PI] as [
+          number,
+          number,
+          number,
+        ],
+        meshPosition: [w - 2 * pw, 0, d / 2] as [number, number, number],
+      };
+    case "left":
+      // Vertical bar on left, extends FULL HEIGHT
+      // Profile extends LEFTWARD after rotation → shift group RIGHT by pw to compensate
+      return {
+        groupPosition: [-w / 2, -h / 2, -d] as [number, number, number],
+        meshRotation: [Math.PI / 2, 0, 0] as [number, number, number],
+        meshPosition: [0, h, d / 2] as [number, number, number],
+        meshScale: [1, 1, 1] as [number, number, number],
+      };
+    case "right":
+      // Vertical bar on right, extends FULL HEIGHT
+      // Profile extends LEFTWARD after rotation → correct for right (faces inward toward center)
+      return {
+        groupPosition: [w / 2, -h / 2 - h, -d] as [number, number, number],
+        meshRotation: [-Math.PI / 2, 0, Math.PI] as [number, number, number],
+        meshPosition: [0, h, d / 2] as [number, number, number],
+        meshScale: [1, 1, 1] as [number, number, number],
+      };
+  }
+}
+
+/**
+ * Calculate transform for a sash frame segment
+ * Similar to frame segment but with Z-offset for depth positioning
+ *
+ * SASH FRAME NOTES:
+ * - Same corner joint strategy as outer frame:
+ *   Vertical stiles = FULL HEIGHT, Horizontal rails = FIT BETWEEN stiles
+ * - Geometry lengths are pre-shortened in profileSystem.ts
+ * - sashProfileWidth = profileWidth * 0.7 (sash is 70% of outer frame)
+ * - Different Z-rotation (Math.PI/2) to match sash profile orientation
+ */
+function getSashSegmentTransform(
+  segment: "bottom" | "top" | "left" | "right",
+  width: number,
+  height: number,
+  depth: number,
+  zOffset: number,
+  sashProfileWidth: number, // sash profile width for corner joint inset
+) {
+  // IMPORTANT: Geometry in profileSystem.ts subtracts SASH_CLEARANCE from both
+  // width and height so the sash fits inside the outer frame opening.
+  // Transforms must use the ACTUAL sash dimensions to match, otherwise gaps
+  // appear at corners where geometry is shorter than expected.
+  const aw = width - SASH_CLEARANCE; // actual sash width (matches geometry)
+  const ah = height - SASH_CLEARANCE; // actual sash height (matches geometry)
+  const d = depth;
+  const spw = sashProfileWidth;
+
+  switch (segment) {
+    case "bottom":
+      // Horizontal rail at bottom, fits between vertical stiles
+      // Profile extends UPWARD after rotation → correct for bottom (faces inward)
+      return {
+        groupPosition: [-aw / 2 + spw, -ah / 2, zOffset] as [
+          number,
+          number,
+          number,
+        ],
+        meshRotation: [0, -Math.PI / 2, Math.PI / 2] as [
+          number,
+          number,
+          number,
+        ],
+        meshPosition: [aw - 2 * spw, 0, d / 2] as [number, number, number],
+      };
+    case "top":
+      // Horizontal rail at top, fits between vertical stiles
+      // Profile extends UPWARD after rotation → shift group DOWN by spw to compensate
+      return {
+        groupPosition: [-aw / 2 + spw, ah / 2 - spw, zOffset] as [
+          number,
+          number,
+          number,
+        ],
+        meshRotation: [0, -Math.PI / 2, Math.PI / 2] as [
+          number,
+          number,
+          number,
+        ],
+        meshPosition: [aw - 2 * spw, 0, d / 2] as [number, number, number],
+      };
+    case "left":
+      // Vertical stile on left, extends FULL HEIGHT
+      // Profile extends LEFTWARD after rotation → shift group RIGHT by spw to compensate
+      return {
+        groupPosition: [-aw / 2 + spw, -ah / 2, zOffset] as [
+          number,
+          number,
+          number,
+        ],
+        meshRotation: [Math.PI / 2, 0, Math.PI] as [number, number, number],
+        meshPosition: [0, ah, d / 2] as [number, number, number],
+      };
+    case "right":
+      // Vertical stile on right, extends FULL HEIGHT
+      // Profile extends LEFTWARD after rotation → correct for right (faces inward toward center)
+      return {
+        groupPosition: [aw / 2, -ah / 2, zOffset] as [number, number, number],
+        meshRotation: [Math.PI / 2, 0, Math.PI] as [number, number, number],
+        meshPosition: [0, ah, d / 2] as [number, number, number],
+      };
+  }
+}
 
 // Main dynamic window component
 // Renders a window with dimensions in cm
@@ -109,7 +272,7 @@ const DynamicWindow = (props: any) => {
   );
 
   // Generate frame geometries using path extrusion
-  const frameGeometries = useMemo(
+  const frameData = useMemo(
     () =>
       createCompleteFrame(
         widthCm * 10,
@@ -314,16 +477,34 @@ const DynamicWindow = (props: any) => {
       scale={scale}
       userData={{ modelId: props.id }}
     >
-      {/* Outer frame (static) */}
-      <mesh
-        geometry={frameGeometries[0]}
-        material={frameOutsideMaterial}
-        castShadow
-        receiveShadow
-      />
+      {/* Outer frame - 4 segments with nested groups for clean positioning */}
+      <group name="outer-frame">
+        {(["bottom", "top", "left", "right"] as const).map((segment, idx) => {
+          const transform = getFrameSegmentTransform(
+            segment,
+            widthCm * 10 * 0.001,
+            heightCm * 10 * 0.001,
+            profileConfig.depth * 0.001,
+            profileConfig.width * 0.001,
+          );
+          return (
+            <group key={segment} position={transform.groupPosition}>
+              <mesh
+                geometry={frameData.outerFrameSegments[idx]}
+                material={frameOutsideMaterial}
+                rotation={transform.meshRotation}
+                position={transform.meshPosition}
+                scale={transform.meshScale || [1, 1, 1]}
+                castShadow
+                receiveShadow
+              />
+            </group>
+          );
+        })}
+      </group>
 
       {/* Sash groups - each contains frame + glass + opening lines */}
-      {frameGeometries.slice(1).map((sashGeometry, index) => {
+      {frameData.sashFrameSegments.map((sashSegments, index) => {
         const mm = 0.001;
         const innerWidth = widthCm * 10 * mm - profileConfig.width * mm * 2;
         const innerHeight = heightCm * 10 * mm - profileConfig.width * mm * 2;
@@ -341,6 +522,15 @@ const DynamicWindow = (props: any) => {
         const openingType = openingConfigs[index]?.type || "fixed";
         const currentMode = sashModes[index] || "dreh";
 
+        // Calculate glass dimensions (glass sits inside sash frame)
+        // sashProfileWidth = 70% of outer frame profile width
+        const sashProfileWidth = profileConfig.width * mm * 0.7;
+        const glassWidth = sashWidth - sashProfileWidth * 2;
+        const glassHeight = innerHeight - sashProfileWidth * 2;
+
+        // Calculate glass front surface Z-position for visualization alignment
+        const glassFrontZ = calculateGlassFrontZPosition(profileConfig, 24);
+
         // Calculate hinge position and sash offset based on opening type and mode
         let hingeX = 0; // Hinge position in world space (X)
         let hingeY = 0; // Hinge position in world space (Y)
@@ -353,6 +543,10 @@ const DynamicWindow = (props: any) => {
           windowType === 1
             ? 0
             : -innerWidth / 2 + sashWidth / 2 + index * sashWidth;
+
+        // Z offset for sash frame to align with outer frame
+        // Sash sits slightly inward from the front of the frame (at the rebate position)
+        const sashZOffset = -profileConfig.depth * mm * 0.15;
 
         switch (openingType) {
           case "kipp":
@@ -442,37 +636,62 @@ const DynamicWindow = (props: any) => {
               <group position={[sashOffsetX, sashOffsetY, 0]}>
                 {" "}
                 {/* Offset to position sash */}
-                {/* Sash frame */}
-                <mesh
-                  geometry={sashGeometry}
-                  material={frameInsideMaterial}
-                  castShadow
-                  receiveShadow
-                />
-                {/* Glass pane */}
-                <mesh
-                  geometry={glassGeometries[index]}
-                  material={glassMaterial}
-                  castShadow
-                  receiveShadow
-                />
-                {/* 3D opening indicator lines (rotate with sash) */}
-                {showOpeningViz &&
-                  openingConfigs[index] &&
-                  openingConfigs[index].type !== "fixed" && (
-                    <OpeningVisualization
-                      openingType={openingConfigs[index].type}
-                      width={sashWidth}
-                      height={innerHeight}
-                      depth={profileConfig.depth * mm}
-                      sashPosition={[0, 0, 0]} // Already in sash local space
-                      isOpen={sashOpenStates[index] || false}
-                      onOpenChange={(isOpen) =>
-                        handleSashOpenChange(index, isOpen)
-                      }
-                      renderLinesOnly={true} // Only render 3D lines in rotating group
-                    />
+                {/* Sash frame - 4 segments with nested groups */}
+                <group name={`sash-${index}-frame`}>
+                  {(["bottom", "top", "left", "right"] as const).map(
+                    (segment, segIdx) => {
+                      // sashProfileWidth = 70% of outer frame profile width
+                      const sashProfileWidth = profileConfig.width * mm * 0.7;
+                      const transform = getSashSegmentTransform(
+                        segment,
+                        sashWidth,
+                        innerHeight,
+                        profileConfig.depth * mm * 0.9,
+                        sashZOffset,
+                        sashProfileWidth,
+                      );
+                      return (
+                        <group key={segment} position={transform.groupPosition}>
+                          <mesh
+                            geometry={sashSegments[segIdx]}
+                            material={frameInsideMaterial}
+                            rotation={transform.meshRotation}
+                            position={transform.meshPosition}
+                            castShadow
+                            receiveShadow
+                          />
+                        </group>
+                      );
+                    },
                   )}
+                </group>
+                {/* Glass + Visualization Group - grouped for consistent positioning */}
+                <group name={`sash-${index}-glass-viz`}>
+                  {/* Glass pane */}
+                  <mesh
+                    geometry={glassGeometries[index]}
+                    material={glassMaterial}
+                    castShadow
+                    receiveShadow
+                  />
+                  {/* 3D opening indicator lines (rotate with sash) */}
+                  {showOpeningViz &&
+                    openingConfigs[index] &&
+                    openingConfigs[index].type !== "fixed" && (
+                      <OpeningVisualization
+                        openingType={openingConfigs[index].type}
+                        glassWidth={glassWidth}
+                        glassHeight={glassHeight}
+                        sashPosition={[0, 0, 0]} // Already in sash local space
+                        glassFrontZ={glassFrontZ}
+                        isOpen={sashOpenStates[index] || false}
+                        onOpenChange={(isOpen) =>
+                          handleSashOpenChange(index, isOpen)
+                        }
+                        renderLinesOnly={true} // Only render 3D lines in rotating group
+                      />
+                    )}
+                </group>
                 {/* HTML buttons (rotate with sash) */}
                 {showOpeningViz &&
                   openingConfigs[index] &&
@@ -487,10 +706,10 @@ const DynamicWindow = (props: any) => {
                         {/* Main button (dreh for hybrids, or the only button for non-hybrids) */}
                         <OpeningVisualization
                           openingType={openingConfigs[index].type}
-                          width={sashWidth}
-                          height={innerHeight}
-                          depth={profileConfig.depth * mm}
+                          glassWidth={glassWidth}
+                          glassHeight={glassHeight}
                           sashPosition={[0, 0, 0]} // Already in sash local space
+                          glassFrontZ={glassFrontZ}
                           isOpen={
                             isOpen && (!isHybrid || currentMode === "dreh")
                           }
@@ -504,10 +723,10 @@ const DynamicWindow = (props: any) => {
                         {isHybrid && (
                           <OpeningVisualization
                             openingType="kipp"
-                            width={sashWidth}
-                            height={innerHeight}
-                            depth={profileConfig.depth * mm}
+                            glassWidth={glassWidth}
+                            glassHeight={glassHeight}
                             sashPosition={[0, 0, 0]} // Already in sash local space
+                            glassFrontZ={glassFrontZ}
                             isOpen={isOpen && currentMode === "kipp"}
                             onOpenChange={(isOpen) =>
                               handleSashOpenChange(index, isOpen, "kipp")
