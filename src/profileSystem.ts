@@ -608,6 +608,7 @@ export function createGlassPanes(
   paneCount: number,
   profileConfig: ProfileConfig,
   glassThicknessMm: number = 24, // Double glazing typical 24mm
+  openingConfigs?: { type: string }[], // Optional opening configs to determine fixed vs operable
 ): THREE.BufferGeometry[] {
   const mm = 0.001;
   const w = widthMm * mm;
@@ -628,9 +629,12 @@ export function createGlassPanes(
   const geometries: THREE.BufferGeometry[] = [];
 
   if (paneCount === 1) {
-    // Single pane - inside sash frame
-    const glassWidth = innerWidth - sashFw * 2;
-    const glassHeight = innerHeight - sashFw * 2;
+    // Single pane
+    const isFixed = openingConfigs?.[0]?.type === "fixed";
+    // For fixed: glass fills entire inner area (no sash frame)
+    // For operable: glass sits inside sash frame
+    const glassWidth = isFixed ? innerWidth : innerWidth - sashFw * 2;
+    const glassHeight = isFixed ? innerHeight : innerHeight - sashFw * 2;
     const geom = new THREE.BoxGeometry(glassWidth, glassHeight, thickness);
     // Only translate in Z - X/Y positioning handled in Window.tsx
     geom.translate(0, 0, glassZ);
@@ -638,10 +642,13 @@ export function createGlassPanes(
   } else {
     // Multiple panes
     const sashWidth = innerWidth / paneCount;
-    const glassWidth = sashWidth - sashFw * 2;
-    const glassHeight = innerHeight - sashFw * 2;
 
     for (let i = 0; i < paneCount; i++) {
+      const isFixed = openingConfigs?.[i]?.type === "fixed";
+      // For fixed: glass fills entire sash area (no sash frame)
+      // For operable: glass sits inside sash frame
+      const glassWidth = isFixed ? sashWidth : sashWidth - sashFw * 2;
+      const glassHeight = isFixed ? innerHeight : innerHeight - sashFw * 2;
       const geom = new THREE.BoxGeometry(glassWidth, glassHeight, thickness);
       // Only translate in Z - X positioning handled in Window.tsx
       geom.translate(0, 0, glassZ);

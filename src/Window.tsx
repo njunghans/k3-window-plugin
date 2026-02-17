@@ -310,19 +310,6 @@ const DynamicWindow = (props: any) => {
     [widthCm, heightCm, windowType, profileConfig],
   );
 
-  // Generate glass panes with realistic thickness
-  const glassGeometries = useMemo(
-    () =>
-      createGlassPanes(
-        widthCm * 10,
-        heightCm * 10,
-        windowType,
-        profileConfig,
-        24, // 24mm double glazing
-      ),
-    [widthCm, heightCm, windowType, profileConfig],
-  );
-
   // Configure opening for each sash based on individual settings
   const openingConfigs: OpeningConfig[] = useMemo(() => {
     const sashChoices = [
@@ -341,6 +328,20 @@ const DynamicWindow = (props: any) => {
     openingTypes,
   ]);
 
+  // Generate glass panes with realistic thickness
+  const glassGeometries = useMemo(
+    () =>
+      createGlassPanes(
+        widthCm * 10,
+        heightCm * 10,
+        windowType,
+        profileConfig,
+        24, // 24mm double glazing
+        openingConfigs, // Pass opening configs to determine fixed vs operable
+      ),
+    [widthCm, heightCm, windowType, profileConfig, openingConfigs],
+  );
+
   // Calculate Pfosten requirements based on opening types
   const pfostenNeeds = useMemo(() => {
     const needs: boolean[] = [];
@@ -351,15 +352,19 @@ const DynamicWindow = (props: any) => {
 
       // Check if left sash needs Pfosten on its right side
       const leftNeedsRight =
+        leftSash.type === "fixed" || // Fixed needs support on all sides
         leftSash.type === "kipp" || // Kipp needs both sides
         leftSash.type === "dreh-rechts" || // Anchors right
-        leftSash.type === "dreh-kipp-rechts"; // Anchors right
+        leftSash.type === "dreh-kipp-links" || // Hybrid needs both sides (can be Kipp mode)
+        leftSash.type === "dreh-kipp-rechts"; // Hybrid needs both sides (can be Kipp mode)
 
       // Check if right sash needs Pfosten on its left side
       const rightNeedsLeft =
+        rightSash.type === "fixed" || // Fixed needs support on all sides
         rightSash.type === "kipp" || // Kipp needs both sides
         rightSash.type === "dreh-links" || // Anchors left
-        rightSash.type === "dreh-kipp-links"; // Anchors left
+        rightSash.type === "dreh-kipp-links" || // Hybrid needs both sides (can be Kipp mode)
+        rightSash.type === "dreh-kipp-rechts"; // Hybrid needs both sides (can be Kipp mode)
 
       // Pfosten needed if either sash requires it
       let required = leftNeedsRight || rightNeedsLeft;
@@ -431,7 +436,7 @@ const DynamicWindow = (props: any) => {
         case "kipp":
           return Math.PI / 16; // 30 degrees tilt from bottom (positive = tilt inward)
         case "dreh-links":
-          return -Math.PI; // 60 degrees, left hinge swings right (negative Y rotation)
+          return -Math.PI * 0.6; // 60 degrees, left hinge swings right (negative Y rotation)
         case "dreh-rechts":
           return Math.PI * 0.6; // 60 degrees, right hinge swings left (positive Y rotation)
         case "dreh-kipp-links":
@@ -570,12 +575,18 @@ const DynamicWindow = (props: any) => {
         const currentRotation = sashRotations[index] || 0;
         const openingType = openingConfigs[index]?.type || "fixed";
         const currentMode = sashModes[index] || "dreh";
+        const isFixed = openingType === "fixed";
 
-        // Calculate glass dimensions (glass sits inside sash frame)
-        // sashProfileWidth = 70% of outer frame profile width
+        // Calculate glass dimensions
+        // For fixed windows: glass fills entire inner area (no sash frame)
+        // For operable windows: glass sits inside sash frame
         const sashProfileWidth = profileConfig.width * mm * 0.7;
-        const glassWidth = sashWidth - sashProfileWidth * 2;
-        const glassHeight = innerHeight - sashProfileWidth * 2;
+        const glassWidth = isFixed
+          ? sashWidth
+          : sashWidth - sashProfileWidth * 2;
+        const glassHeight = isFixed
+          ? innerHeight
+          : innerHeight - sashProfileWidth * 2;
 
         // Calculate glass front surface Z-position for visualization alignment
         const glassFrontZ = calculateGlassFrontZPosition(profileConfig, 24);
@@ -685,35 +696,40 @@ const DynamicWindow = (props: any) => {
               <group position={[sashOffsetX, sashOffsetY, 0]}>
                 {" "}
                 {/* Offset to position sash */}
-                {/* Sash frame - 4 segments with nested groups */}
-                <group name={`sash-${index}-frame`}>
-                  {(["bottom", "top", "left", "right"] as const).map(
-                    (segment, segIdx) => {
-                      // sashProfileWidth = 70% of outer frame profile width
-                      const sashProfileWidth = profileConfig.width * mm * 0.7;
-                      const transform = getSashSegmentTransform(
-                        segment,
-                        sashWidth,
-                        innerHeight,
-                        profileConfig.depth * mm * 0.9,
-                        sashZOffset,
-                        sashProfileWidth,
-                      );
-                      return (
-                        <group key={segment} position={transform.groupPosition}>
-                          <mesh
-                            geometry={sashSegments[segIdx]}
-                            material={frameInsideMaterial}
-                            rotation={transform.meshRotation}
-                            position={transform.meshPosition}
-                            castShadow
-                            receiveShadow
-                          />
-                        </group>
-                      );
-                    },
-                  )}
-                </group>
+                {/* Sash frame - 4 segments with nested groups (skip for fixed windows) */}
+                {!isFixed && (
+                  <group name={`sash-${index}-frame`}>
+                    {(["bottom", "top", "left", "right"] as const).map(
+                      (segment, segIdx) => {
+                        // sashProfileWidth = 70% of outer frame profile width
+                        const sashProfileWidth = profileConfig.width * mm * 0.7;
+                        const transform = getSashSegmentTransform(
+                          segment,
+                          sashWidth,
+                          innerHeight,
+                          profileConfig.depth * mm * 0.9,
+                          sashZOffset,
+                          sashProfileWidth,
+                        );
+                        return (
+                          <group
+                            key={segment}
+                            position={transform.groupPosition}
+                          >
+                            <mesh
+                              geometry={sashSegments[segIdx]}
+                              material={frameInsideMaterial}
+                              rotation={transform.meshRotation}
+                              position={transform.meshPosition}
+                              castShadow
+                              receiveShadow
+                            />
+                          </group>
+                        );
+                      },
+                    )}
+                  </group>
+                )}
                 {/* Glass + Visualization Group - grouped for consistent positioning */}
                 <group name={`sash-${index}-glass-viz`}>
                   {/* Glass pane */}
@@ -744,6 +760,7 @@ const DynamicWindow = (props: any) => {
                 {/* HTML buttons (rotate with sash) */}
                 {showOpeningViz &&
                   openingConfigs[index] &&
+                  openingConfigs[index].type !== "fixed" &&
                   (() => {
                     const isHybrid =
                       openingType === "dreh-kipp-links" ||
