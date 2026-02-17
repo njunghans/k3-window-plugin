@@ -78,13 +78,13 @@ function getFrameSegmentTransform(
       // Geometry pre-shortened to (width - 2*profileWidth) in profileSystem.ts
       // Profile extends DOWNWARD after rotation → shift group UP by depth to compensate
       return {
-        groupPosition: [-w - 2 * pw, -h / 2, -d] as [number, number, number],
+        groupPosition: [-w / 2 + pw, -h / 2, -d] as [number, number, number],
         meshRotation: [-Math.PI / 2, Math.PI / 2, Math.PI] as [
           number,
           number,
           number,
         ],
-        meshPosition: [w - 2 * pw, 0, d / 2] as [number, number, number],
+        meshPosition: [0, 0, d / 2] as [number, number, number],
       };
     case "top":
       // Horizontal bar at top, fits between left and right verticals
@@ -474,17 +474,34 @@ const DynamicWindow = (props: any) => {
 
     // If switching modes while open, close first then open in new mode
     if (currentOpen && currentMode !== mode) {
-      // Switch mode: close current and open in new mode
-      setSashOpenStates((prev) => {
-        const newStates = [...prev];
-        newStates[index] = true; // Stay open but switch mode
-        return newStates;
+      // First, reset rotation to closed state immediately
+      setSashRotations((prev) => {
+        const newRotations = [...prev];
+        newRotations[index] = 0;
+        return newRotations;
       });
+
+      // Switch mode and close
       setSashModes((prev) => {
         const newModes = [...prev];
         newModes[index] = mode;
         return newModes;
       });
+
+      setSashOpenStates((prev) => {
+        const newStates = [...prev];
+        newStates[index] = false;
+        return newStates;
+      });
+
+      // After a brief delay, open in the new mode
+      setTimeout(() => {
+        setSashOpenStates((prev) => {
+          const newStates = [...prev];
+          newStates[index] = true;
+          return newStates;
+        });
+      }, 50);
     } else {
       // Same mode or not open: toggle normally
       setSashOpenStates((prev) => {
