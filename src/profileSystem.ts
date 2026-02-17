@@ -61,7 +61,7 @@ function createLShapeProfileCrossSection(
  * Profile structure (cross-section view):
  *  ___________  ← head of T at full frame depth (for glass rebates on both sides)
  * |           |
- * |_____  ____|  
+ * |_____  ____|
  *       ||       ← stem of T at inner rebate depth (central support)
  *       ||
  */
@@ -70,7 +70,7 @@ export function createMullionProfile(config: ProfileConfig): THREE.Shape {
 
   const width = (config.width || 60) * mm;
   const depth = (config.depth || 70) * mm;
-  
+
   const stemWidth = width * 0.4; // Central stem is 40% of total width
   const stemDepth = depth * 0.3; // Stem depth matches rebate depth (30%)
   const headDepth = depth; // Head extends to full frame depth
@@ -85,21 +85,21 @@ export function createMullionProfile(config: ProfileConfig): THREE.Shape {
   shape.moveTo(-halfStem, 0);
   shape.lineTo(halfStem, 0); // Bottom edge of stem
   shape.lineTo(halfStem, stemDepth); // Right edge of stem going up
-  
+
   // Transition to head (right side) - head is wider and extends to full depth
   shape.lineTo(halfWidth, stemDepth); // Extend right to full head width
   shape.lineTo(halfWidth, headDepth); // Right edge of head going up to full depth
-  
+
   // Top of head at full depth
   shape.lineTo(-halfWidth, headDepth); // Top edge across
-  
+
   // Left side of head
   shape.lineTo(-halfWidth, stemDepth); // Left edge of head going down
-  
+
   // Transition back to stem (left side)
   shape.lineTo(-halfStem, stemDepth); // Come back in to stem width
   shape.lineTo(-halfStem, 0); // Left edge of stem going down
-  
+
   // Shape closes automatically back to start point
 
   return shape;
@@ -556,7 +556,7 @@ export function createCompleteFrame(
 /**
  * Calculate the Z-position for glass surface
  * This ensures consistent positioning for glass, visualization lines, and buttons
- * 
+ *
  * @param profileConfig - Profile configuration containing depth
  * @param glassThicknessMm - Glass thickness in mm (default 24mm for double glazing)
  * @returns Z-position in meters for the glass center
@@ -568,20 +568,20 @@ export function calculateGlassZPosition(
   const mm = 0.001;
   const frameDepth = (profileConfig.depth || 70) * mm;
   const thickness = glassThicknessMm * mm;
-  
+
   // Position glass inside the sash frame depth
-  // Sash sits at -15% of frame depth, glass sits in the middle of sash depth
-  const sashZOffset = -frameDepth * 0.15;
+  // Sash sits at 15% of frame depth, glass sits in the middle of sash depth
+  const sashZOffset = frameDepth * 0.15;
   const sashDepth = frameDepth * 0.6;
   const glassZ = sashZOffset - sashDepth * 0.5 + thickness / 2;
-  
+
   return glassZ;
 }
 
 /**
  * Calculate the Z-position for the front face of the glass
  * This is where visualization lines and buttons should be positioned
- * 
+ *
  * @param profileConfig - Profile configuration containing depth
  * @param glassThicknessMm - Glass thickness in mm (default 24mm for double glazing)
  * @returns Z-position in meters for the glass front surface
@@ -593,7 +593,7 @@ export function calculateGlassFrontZPosition(
   const mm = 0.001;
   const thickness = glassThicknessMm * mm;
   const glassZ = calculateGlassZPosition(profileConfig, glassThicknessMm);
-  
+
   // Front surface is at glass center + half thickness
   return glassZ + thickness / 2;
 }

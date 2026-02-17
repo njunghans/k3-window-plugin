@@ -606,7 +606,7 @@ const DynamicWindow = (props: any) => {
 
         // Z offset for sash frame to align with outer frame
         // Sash sits slightly inward from the front of the frame (at the rebate position)
-        const sashZOffset = -profileConfig.depth * mm * 0.15;
+        const sashZOffset = profileConfig.depth * mm * 0.15;
 
         switch (openingType) {
           case "kipp":
