@@ -16,6 +16,33 @@ import { OpeningVisualization } from "./components/OpeningVisualization";
 import type { OpeningConfig } from "./types";
 
 /**
+ * Calculate transform for a Pfosten (vertical mullion)
+ * Returns group position, mesh rotation, and mesh local position
+ *
+ * PFOSTEN NOTES:
+ * - Uses T-shaped mullion profile extruded along +Z axis for full inner height
+ * - Positioned vertically at boundaries between sashes
+ * - Extends from bottom to top of inner area (excluding outer frame)
+ * - Centered at origin in XY, needs rotation to stand vertical and positioning to correct X location
+ */
+function getPfostenTransform(
+  xPosition: number,
+  innerHeight: number,
+  depth: number,
+) {
+  const h = innerHeight;
+  const d = depth;
+
+  // Pfosten is extruded along +Z, needs 90° rotation around X to stand vertical
+  // Then position at specified X coordinate, centered vertically
+  return {
+    groupPosition: [xPosition, 0, 0] as [number, number, number],
+    meshRotation: [-Math.PI / 2, 0, 0] as [number, number, number],
+    meshPosition: [0, -h / 2, d / 2] as [number, number, number],
+  };
+}
+
+/**
  * Calculate transform for a frame segment
  * Returns group position, mesh rotation, and mesh local position
  *
@@ -51,7 +78,7 @@ function getFrameSegmentTransform(
       // Geometry pre-shortened to (width - 2*profileWidth) in profileSystem.ts
       // Profile extends DOWNWARD after rotation → shift group UP by depth to compensate
       return {
-        groupPosition: [-w -2*pw, -h / 2, -d] as [number, number, number],
+        groupPosition: [-w - 2 * pw, -h / 2, -d] as [number, number, number],
         meshRotation: [-Math.PI / 2, Math.PI / 2, Math.PI] as [
           number,
           number,
@@ -354,16 +381,22 @@ const DynamicWindow = (props: any) => {
     return needs;
   }, [openingConfigs, windowType, pfosten1Choice, pfosten2Choice]);
 
-  // Create Pfosten geometries based on requirements
-  const pfostenGeometries = useMemo(() => {
+  // Create Pfosten geometry (single geometry reused for all positions)
+  const pfostenGeometry = useMemo(() => {
+    if (windowType === 1) return null; // Single pane, no Pfosten
+
+    // Pfosten height should match inner height (exclude top/bottom frame)
+    const innerHeightMm = heightCm * 10 - profileConfig.width * 2;
+    return createPfosten(innerHeightMm, profileConfig);
+  }, [windowType, heightCm, profileConfig]);
+
+  // Calculate Pfosten positions based on requirements
+  const pfostenPositions = useMemo(() => {
     if (windowType === 1) return []; // Single pane, no Pfosten
 
     const mm = 0.001;
     const innerWidth = widthCm * 10 * mm - profileConfig.width * mm * 2;
     const sashWidth = innerWidth / windowType;
-
-    // Pfosten height should match inner height (exclude top/bottom frame)
-    const innerHeightMm = heightCm * 10 - profileConfig.width * 2;
 
     return pfostenNeeds
       .map((needed, i) => {
@@ -372,11 +405,10 @@ const DynamicWindow = (props: any) => {
         // Calculate X position for this Pfosten
         // Position at boundary between sashes
         const xPos = -innerWidth / 2 + sashWidth * (i + 1);
-
-        return createPfosten(innerHeightMm, profileConfig, xPos);
+        return xPos;
       })
-      .filter(Boolean) as THREE.BufferGeometry[];
-  }, [pfostenNeeds, widthCm, heightCm, windowType, profileConfig]);
+      .filter((pos): pos is number => pos !== null);
+  }, [pfostenNeeds, widthCm, windowType, profileConfig]);
 
   // Animate opening/closing of sashes
   useFrame((state, delta) => {
@@ -397,24 +429,24 @@ const DynamicWindow = (props: any) => {
         case "fixed":
           return 0;
         case "kipp":
-          return Math.PI / 6; // 30 degrees tilt from bottom (positive = tilt inward)
+          return Math.PI / 16; // 30 degrees tilt from bottom (positive = tilt inward)
         case "dreh-links":
-          return -Math.PI / 3; // 60 degrees, left hinge swings right (negative Y rotation)
+          return -Math.PI; // 60 degrees, left hinge swings right (negative Y rotation)
         case "dreh-rechts":
-          return Math.PI / 3; // 60 degrees, right hinge swings left (positive Y rotation)
+          return Math.PI * 0.6; // 60 degrees, right hinge swings left (positive Y rotation)
         case "dreh-kipp-links":
           // Hybrid: check mode
           if (mode === "kipp") {
-            return Math.PI / 6; // 30 degrees tilt from bottom (kipp mode - inward)
+            return Math.PI / 16; // 30 degrees tilt from bottom (kipp mode - inward)
           } else {
-            return -Math.PI / 3; // 60 degrees swing from left (dreh mode)
+            return -Math.PI * 0.6; // 60 degrees swing from left (dreh mode)
           }
         case "dreh-kipp-rechts":
           // Hybrid: check mode
           if (mode === "kipp") {
-            return Math.PI / 6; // 30 degrees tilt from bottom (kipp mode - inward)
+            return Math.PI / 16; // 30 degrees tilt from bottom (kipp mode - inward)
           } else {
-            return Math.PI / 3; // 60 degrees swing from right (dreh mode)
+            return Math.PI * 0.6; // 60 degrees swing from right (dreh mode)
           }
         default:
           return 0;
@@ -744,15 +776,29 @@ const DynamicWindow = (props: any) => {
       })}
 
       {/* Pfosten (vertical mullions) - structural dividers between sashes */}
-      {pfostenGeometries.map((geometry, index) => (
-        <mesh
-          key={`pfosten-${index}`}
-          geometry={geometry}
-          material={frameOutsideMaterial} // Use outside material for Pfosten
-          castShadow
-          receiveShadow
-        />
-      ))}
+      {pfostenGeometry &&
+        pfostenPositions.map((xPos, index) => {
+          const mm = 0.001;
+          const innerHeight = heightCm * 10 * mm - profileConfig.width * mm * 2;
+          const transform = getPfostenTransform(
+            xPos,
+            innerHeight,
+            profileConfig.depth * mm,
+          );
+
+          return (
+            <group key={`pfosten-${index}`} position={transform.groupPosition}>
+              <mesh
+                geometry={pfostenGeometry}
+                material={frameOutsideMaterial}
+                rotation={transform.meshRotation}
+                position={transform.meshPosition}
+                castShadow
+                receiveShadow
+              />
+            </group>
+          );
+        })}
     </group>
   );
 };

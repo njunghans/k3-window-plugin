@@ -58,39 +58,49 @@ function createLShapeProfileCrossSection(
  * Create T-shaped mullion profile cross-section
  * Used for vertical dividers between glass panes
  *
- * Profile structure:
- *  ____  ____
- * |    ||    | <- glass rebates on both sides
- * |    ||    |
- * |____||____|
- *      ||      <- central stem
+ * Profile structure (cross-section view):
+ *  ___________  ← head of T at full frame depth (for glass rebates on both sides)
+ * |           |
+ * |_____  ____|  
+ *       ||       ← stem of T at inner rebate depth (central support)
+ *       ||
  */
 export function createMullionProfile(config: ProfileConfig): THREE.Shape {
   const mm = 0.001;
 
   const width = (config.width || 60) * mm;
   const depth = (config.depth || 70) * mm;
-  const stemWidth = width * 0.3; // Central stem is ~30% of total
-  // const rebateWidth = (width - stemWidth) / 2;
+  
+  const stemWidth = width * 0.4; // Central stem is 40% of total width
+  const stemDepth = depth * 0.3; // Stem depth matches rebate depth (30%)
+  const headDepth = depth; // Head extends to full frame depth
 
   const shape = new THREE.Shape();
 
-  // Create symmetric T-shape centered at origin
+  // Create T-shape starting from bottom-left of stem
   const halfWidth = width / 2;
   const halfStem = stemWidth / 2;
 
-  // Start bottom-left
-  shape.moveTo(-halfWidth, 0);
-  shape.lineTo(-halfStem, 0); // Bottom left to stem
-  shape.lineTo(-halfStem, depth * 0.7); // Stem up
-  shape.lineTo(-halfWidth, depth * 0.7); // Left rebate horizontal
-  shape.lineTo(-halfWidth, depth); // Left rebate up
-  shape.lineTo(halfWidth, depth); // Top across
-  shape.lineTo(halfWidth, depth * 0.7); // Right rebate down
-  shape.lineTo(halfStem, depth * 0.7); // Right rebate horizontal
-  shape.lineTo(halfStem, 0); // Stem down
-  shape.lineTo(halfWidth, 0); // Bottom right
-  shape.lineTo(-halfWidth, 0); // Bottom back to start
+  // Bottom of stem (centered, narrower)
+  shape.moveTo(-halfStem, 0);
+  shape.lineTo(halfStem, 0); // Bottom edge of stem
+  shape.lineTo(halfStem, stemDepth); // Right edge of stem going up
+  
+  // Transition to head (right side) - head is wider and extends to full depth
+  shape.lineTo(halfWidth, stemDepth); // Extend right to full head width
+  shape.lineTo(halfWidth, headDepth); // Right edge of head going up to full depth
+  
+  // Top of head at full depth
+  shape.lineTo(-halfWidth, headDepth); // Top edge across
+  
+  // Left side of head
+  shape.lineTo(-halfWidth, stemDepth); // Left edge of head going down
+  
+  // Transition back to stem (left side)
+  shape.lineTo(-halfStem, stemDepth); // Come back in to stem width
+  shape.lineTo(-halfStem, 0); // Left edge of stem going down
+  
+  // Shape closes automatically back to start point
 
   return shape;
 }
@@ -449,49 +459,32 @@ export function createSashFrame(
 
 /**
  * Create Pfosten (vertical mullion) geometry
- * Pfosten provides structural support between sashes
+ * Returns geometry in standard orientation (extruded along Z-axis)
+ * Positioning/rotation should be handled at the mesh/group level
  *
- * @param heightMm - Full window height in mm
+ * @param heightMm - Inner height in mm (excluding top/bottom frame)
  * @param profileConfig - Profile configuration
- * @param xPosition - X position in meters where Pfosten should be placed
- * @returns BufferGeometry for the Pfosten at specified position
+ * @returns BufferGeometry for the Pfosten, extruded along +Z axis
  */
 export function createPfosten(
   heightMm: number,
   profileConfig: ProfileConfig,
-  xPosition: number,
 ): THREE.BufferGeometry {
   const mm = 0.001;
-  const width = (profileConfig.width || 60) * mm;
-  const depth = (profileConfig.depth || 70) * mm;
   const height = heightMm * mm;
 
-  // Create Pfosten using ExtrudeGeometry - same approach as the frame
-  // Create a rectangular vertical shape
-  const shape = new THREE.Shape();
+  // Use T-shaped mullion profile (same as used for structural dividers)
+  const mullionProfile = createMullionProfile(profileConfig);
 
-  // Vertical rectangle centered at origin in XY plane
-  const halfWidth = width / 2;
-  const halfHeight = height / 2;
-
-  shape.moveTo(-halfWidth, -halfHeight);
-  shape.lineTo(halfWidth, -halfHeight);
-  shape.lineTo(halfWidth, halfHeight);
-  shape.lineTo(-halfWidth, halfHeight);
-  shape.lineTo(-halfWidth, -halfHeight);
-
-  // Extrude to create 3D Pfosten - same settings as frame
+  // Extrude along +Z axis to create vertical mullion
   const extrudeSettings = {
-    depth: depth,
+    depth: height,
     bevelEnabled: false,
   };
 
-  const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  const geometry = new THREE.ExtrudeGeometry(mullionProfile, extrudeSettings);
 
-  // Apply same transformation as frame: translate by half depth in Z
-  // Then position at specified X location
-  geometry.translate(xPosition, 0, depth / 2);
-
+  // Return geometry in standard orientation - caller handles positioning
   return geometry;
 }
 
